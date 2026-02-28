@@ -1,0 +1,22 @@
+{
+  "name": "her-assistant",
+  "version": "1.0.0",
+  "description": "Her — Self-hosted AI companion with full computer control via frp tunnel",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "multer": "^2.0.2",
+    "node-cron": "^4.2.1",
+    "playwright": "^1.50.0",
+    "ws": "^8.19.0"
+  }
+}

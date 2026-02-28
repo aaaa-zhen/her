@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Her — 配置指南</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%236ee7b7'/><text x='50' y='62' text-anchor='middle' font-size='40' font-weight='bold' font-family='sans-serif' fill='%230a0a0a'>H</text></svg>">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#0a0a0a;--surface:#151515;--surface2:#1c1c1c;
+    --border:rgba(255,255,255,.06);
+    --text:#e8e8e8;--text2:#888;--text3:#555;
+    --accent:#6ee7b7;--accent-dim:rgba(110,231,183,.1);
+    --accent-border:rgba(110,231,183,.15);
+    --green:#34d399;--red:#f87171;--yellow:#fbbf24;--blue:#60a5fa;
+    --max-w:640px;
+  }
+  body{
+    font-family:'Inter',-apple-system,'SF Pro Display',sans-serif;
+    background:var(--bg);color:var(--text);
+    min-height:100vh;padding:32px 16px 80px;
+  }
+  .page-hdr{text-align:center;margin-bottom:32px}
+  .logo{
+    width:64px;height:64px;border-radius:50%;
+    background:var(--accent);
+    display:flex;align-items:center;justify-content:center;
+    margin:0 auto 20px;  }
+  .logo svg{width:30px;height:30px;color:#fff}
+  .page-hdr h1{font-size:26px;font-weight:800;color:#fff;letter-spacing:-.4px}
+  .page-hdr p{font-size:14px;color:var(--text2);margin-top:6px}
+  .tabs{display:flex;gap:8px;justify-content:center;margin-bottom:28px}
+  .tab{
+    padding:10px 28px;border-radius:50px;border:1px solid var(--border);
+    background:var(--surface);color:var(--text2);
+    font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;
+    display:flex;align-items:center;gap:8px;
+  }
+  .tab.active{background:var(--accent);color:#0a0a0a;border-color:var(--accent);}
+  .tab svg{width:16px;height:16px}
+  .content{display:none;max-width:var(--max-w);margin:0 auto}
+  .content.active{display:block}
+  .intro{
+    background:var(--accent-dim);border:1px solid var(--accent-border);
+    border-radius:14px;padding:18px 20px;margin-bottom:20px;
+    display:flex;align-items:flex-start;gap:12px;
+  }
+  .intro .emoji{font-size:24px;flex-shrink:0;margin-top:2px}
+  .intro h3{font-size:14px;font-weight:700;color:var(--accent);margin-bottom:3px}
+  .intro p{font-size:13px;color:var(--green);line-height:1.6}
+  .intro strong{font-weight:700}
+  .step{
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:16px;padding:22px;margin-bottom:14px;
+  }
+  .step-hdr{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+  .step-num{
+    width:32px;height:32px;border-radius:50%;
+    background:var(--accent);color:#0a0a0a;
+    font-size:14px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  }
+  .step-title{font-size:17px;font-weight:700;color:#fff}
+  .step-body{padding-left:46px}
+  .step-desc{font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:12px}
+  .step-desc:last-child{margin-bottom:0}
+  .step-desc strong{color:#fff;font-weight:600}
+  .path{
+    display:flex;align-items:center;flex-wrap:wrap;gap:4px;
+    margin:10px 0;padding:10px 14px;
+    background:var(--surface2);border-radius:10px;border:1px solid var(--border);
+  }
+  .path-item{
+    padding:4px 10px;border-radius:6px;
+    background:rgba(255,255,255,.05);color:#fff;
+    font-size:13px;font-weight:600;border:1px solid var(--border);
+  }
+  .path-arrow{color:var(--text3);font-size:13px}
+  .cmd-card{
+    background:var(--surface2);border:1px solid var(--border);border-radius:12px;
+    overflow:hidden;margin:12px 0;
+  }
+  .cmd-hdr{
+    background:rgba(255,255,255,.02);padding:7px 14px;
+    display:flex;align-items:center;justify-content:space-between;
+    border-bottom:1px solid var(--border);
+  }
+  .cmd-hdr .dots{display:flex;gap:5px}
+  .cmd-hdr .dot{width:9px;height:9px;border-radius:50%}
+  .dot-r{background:#ff5f57}.dot-y{background:#febc2e}.dot-g{background:#28c840}
+  .cmd-label{font-size:11px;color:var(--text3);font-family:'SF Mono',monospace}
+  .cmd-card pre{
+    padding:14px 16px;font-family:'SF Mono','Fira Code',monospace;
+    font-size:13px;line-height:1.6;color:var(--accent);overflow-x:auto;white-space:pre-wrap;word-break:break-all;
+    user-select:all;-webkit-user-select:all;
+  }
+  .copy-btn{
+    padding:5px 14px;border-radius:6px;
+    background:var(--accent);border:none;
+    color:#0a0a0a;font-size:12px;font-weight:700;
+    cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0;
+  }
+  .copy-btn:hover{opacity:.85}
+  .copy-btn.copied{background:var(--green)}
+  .box-warn{
+    background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.15);
+    border-radius:10px;padding:10px 14px;margin:10px 0;
+    display:flex;gap:8px;align-items:flex-start;
+    font-size:12px;color:var(--yellow);line-height:1.6;
+  }
+  .box-tip{
+    background:var(--accent-dim);border:1px solid var(--accent-border);
+    border-radius:10px;padding:10px 14px;margin:10px 0;
+    display:flex;gap:8px;align-items:flex-start;
+    font-size:12px;color:var(--green);line-height:1.6;
+  }
+  .box-info{
+    background:rgba(96,165,250,.06);border:1px solid rgba(96,165,250,.15);
+    border-radius:10px;padding:10px 14px;margin:10px 0;
+    display:flex;gap:8px;align-items:flex-start;
+    font-size:12px;color:var(--blue);line-height:1.6;
+  }
+  .wi{font-size:15px;flex-shrink:0}
+  kbd{
+    display:inline-flex;align-items:center;gap:2px;
+    background:var(--surface2);border:1px solid var(--border);
+    border-radius:5px;padding:2px 7px;
+    font-family:-apple-system,sans-serif;font-size:12px;font-weight:600;color:var(--text2);
+    box-shadow:0 1px 0 rgba(255,255,255,.05);white-space:nowrap;
+  }
+  .ic{background:var(--accent-dim);color:var(--accent);padding:2px 6px;border-radius:4px;font-family:'SF Mono',monospace;font-size:12px;font-weight:600}
+  .success{
+    background:var(--accent-dim);border:1px solid var(--accent-border);
+    border-radius:16px;padding:24px;text-align:center;margin-top:8px;
+  }
+  .success .emoji{font-size:36px;margin-bottom:10px}
+  .success h3{font-size:17px;font-weight:800;color:var(--accent);margin-bottom:6px}
+  .success p{font-size:13px;color:var(--green);line-height:1.6}
+  .open-btn{
+    display:inline-block;margin-top:14px;
+    background:var(--accent);color:#0a0a0a;
+    padding:10px 28px;border-radius:50px;
+    font-size:14px;font-weight:700;text-decoration:none;
+    transition:transform .15s;
+  }
+  .open-btn:hover{opacity:.85}
+</style>
+</head>
+<body>
+
+<div class="page-hdr">
+  <div class="logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/>
+      <path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>
+    </svg>
+  </div>
+  <h1>Her 配置指南</h1>
+  <p>复制命令，粘贴运行，几分钟搞定</p>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('mac')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+    Mac
+  </button>
+  <button class="tab" onclick="switchTab('win')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+    Windows
+  </button>
+</div>
+
+<!-- ===================== MAC ===================== -->
+<div class="content active" id="tab-mac">
+
+  <div class="intro">
+    <div class="emoji">🚀</div>
+    <div>
+      <h3>3 步搞定</h3>
+      <p>开两个系统权限 + 复制一行命令运行，<strong>不需要下载任何东西</strong>。</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-hdr"><div class="step-num">1</div><div class="step-title">开启远程登录</div></div>
+    <div class="step-body">
+      <p class="step-desc">让 Her 能连接到你的 Mac：</p>
+      <div class="path">
+        <span class="path-item">系统设置</span><span class="path-arrow">›</span>
+        <span class="path-item">通用</span><span class="path-arrow">›</span>
+        <span class="path-item">共享</span><span class="path-arrow">›</span>
+        <span class="path-item">远程登录</span><span class="path-arrow">›</span>
+        <span class="path-item" style="color:var(--accent)">打开</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-hdr"><div class="step-num">2</div><div class="step-title">开启完全磁盘访问</div></div>
+    <div class="step-body">
+      <div class="path">
+        <span class="path-item">系统设置</span><span class="path-arrow">›</span>
+        <span class="path-item">隐私与安全性</span><span class="path-arrow">›</span>
+        <span class="path-item">完全磁盘访问</span>
+      </div>
+      <p class="step-desc">点 <strong>+</strong>，按 <kbd>⌘</kbd><kbd>Shift</kbd><kbd>G</kbd>，粘贴路径添加：</p>
+      <div class="cmd-card">
+        <div class="cmd-hdr"><div class="dots"><div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div></div><button class="copy-btn" onclick="copy(this,'/usr/sbin/sshd')">复制</button></div>
+        <pre>/usr/sbin/sshd</pre>
+      </div>
+      <div class="box-warn"><span class="wi">⚠️</span><span>必须手动操作，不开的话 Her 无法读写你的文件。</span></div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-hdr"><div class="step-num">3</div><div class="step-title">运行配置命令</div></div>
+    <div class="step-body">
+      <p class="step-desc">打开<strong>终端</strong>（<kbd>⌘</kbd><kbd>空格</kbd> 搜 "终端"），<strong>复制下面的命令</strong>粘贴运行：</p>
+      <div class="cmd-card">
+        <div class="cmd-hdr"><div class="dots"><div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div></div><span class="cmd-label">Terminal</span><button class="copy-btn" id="mac-cmd-btn" onclick="copy(this,macCmd)">复制命令</button></div>
+        <pre id="mac-cmd-pre"></pre>
+      </div>
+      <div class="box-tip"><span class="wi">✅</span><span>运行 1~2 分钟，看到一系列 <strong>[✓]</strong> 就成功了。每次开机重新运行即可。</span></div>
+    </div>
+  </div>
+
+  <div class="success">
+    <div class="emoji">🎉</div>
+    <h3>配置完成！</h3>
+    <p>打开下面的地址开始和 Her 聊天。</p>
+    <a href="/" class="open-btn">打开 Her</a>
+  </div>
+</div>
+
+<!-- ===================== WINDOWS ===================== -->
+<div class="content" id="tab-win">
+
+  <div class="intro">
+    <div class="emoji">🚀</div>
+    <div>
+      <h3>2 步搞定</h3>
+      <p>打开 PowerShell，<strong>复制命令粘贴运行</strong>，全部自动完成。</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-hdr"><div class="step-num">1</div><div class="step-title">打开管理员 PowerShell</div></div>
+    <div class="step-body">
+      <p class="step-desc">按 <kbd>Win</kbd> + <kbd>X</kbd>，点击 <strong>「终端（管理员）」</strong> 或 <strong>「Windows PowerShell（管理员）」</strong></p>
+      <div class="box-info"><span class="wi">ℹ️</span><span>必须是<strong>管理员</strong>权限，否则无法安装 SSH 服务。</span></div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-hdr"><div class="step-num">2</div><div class="step-title">复制命令运行</div></div>
+    <div class="step-body">
+      <p class="step-desc">在 PowerShell 窗口中<strong>右键粘贴</strong>以下命令，按回车：</p>
+      <div class="cmd-card">
+        <div class="cmd-hdr"><div class="dots"><div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div></div><span class="cmd-label">PowerShell (Admin)</span><button class="copy-btn" id="win-cmd-btn" onclick="copy(this,winCmd)">复制命令</button></div>
+        <pre id="win-cmd-pre"></pre>
+      </div>
+      <div class="box-tip"><span class="wi">✅</span><span>运行 1~3 分钟，显示一系列 <strong>[OK]</strong> 就成功了。每次开机重新运行即可。</span></div>
+      <div class="box-warn"><span class="wi">⚠️</span><span>如果弹出防火墙提示，点击<strong>「允许访问」</strong>。<br>运行时请关闭全局 VPN，否则隧道可能连不上。</span></div>
+    </div>
+  </div>
+
+  <div class="success">
+    <div class="emoji">🎉</div>
+    <h3>配置完成！</h3>
+    <p>打开下面的地址开始和 Her 聊天。</p>
+    <a href="/" class="open-btn">打开 Her</a>
+  </div>
+</div>
+
+<script>
+var serverOrigin = location.origin;
+var macCmd = 'curl -sL ' + serverOrigin + '/downloads/mac-setup.sh | bash';
+var winCmd = 'Set-ExecutionPolicy Bypass -Scope Process -Force; irm ' + serverOrigin + '/downloads/windows-setup.ps1 -OutFile $env:TEMP\\her-setup.ps1; & $env:TEMP\\her-setup.ps1';
+
+document.getElementById('mac-cmd-pre').textContent = macCmd;
+document.getElementById('win-cmd-pre').textContent = winCmd;
+
+function switchTab(tab){
+  document.querySelectorAll('.tab').forEach((b,i)=>{
+    b.classList.toggle('active',(i===0&&tab==='mac')||(i===1&&tab==='win'));
+  });
+  document.querySelectorAll('.content').forEach(c=>c.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+}
+
+function copy(btn,text){
+  navigator.clipboard.writeText(text).then(()=>{
+    var orig=btn.textContent;
+    btn.textContent='已复制 ✓';btn.classList.add('copied');
+    setTimeout(function(){btn.textContent=orig;btn.classList.remove('copied')},2000);
+  });
+}
+</script>
+</body>
+</html>
