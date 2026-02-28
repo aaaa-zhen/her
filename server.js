@@ -1020,11 +1020,12 @@ for (const s of savedSchedules) {
 if (savedSchedules.length > 0) console.log(`[Schedule] Restored ${savedSchedules.length} tasks`);
 
 // ===== Streaming Helper =====
-async function streamResponse(ws, conversationHistory, abortSignal) {
+async function streamResponse(ws, conversationHistory, abortSignal, model) {
   const systemPrompt = await getSystemPrompt();
+  const selectedModel = model || "claude-sonnet-4-6";
   return new Promise((resolve, reject) => {
     const stream = anthropic.messages.stream({
-      model: "claude-sonnet-4-6",
+      model: selectedModel,
       max_tokens: 16384,
       system: systemPrompt,
       tools,
@@ -1618,7 +1619,7 @@ wss.on("connection", async (ws) => {
         return;
       }
 
-      const { message, images } = parsed;
+      const { message, images, model: selectedModel } = parsed;
 
       if (message && message.trim() === "/clear") {
         conversationHistory = [];
@@ -1654,7 +1655,7 @@ wss.on("connection", async (ws) => {
       ws.send(JSON.stringify({ type: "thinking" }));
 
       currentAbort = new AbortController();
-      let response = await streamResponse(ws, conversationHistory, currentAbort.signal);
+      let response = await streamResponse(ws, conversationHistory, currentAbort.signal, selectedModel);
       currentAbort = null;
       trackUsage(response, sessionUsage, ws);
 
@@ -1684,7 +1685,7 @@ wss.on("connection", async (ws) => {
 
         ws.send(JSON.stringify({ type: "thinking" }));
         currentAbort = new AbortController();
-        response = await streamResponse(ws, conversationHistory, currentAbort.signal);
+        response = await streamResponse(ws, conversationHistory, currentAbort.signal, selectedModel);
         currentAbort = null;
         trackUsage(response, sessionUsage, ws);
       }

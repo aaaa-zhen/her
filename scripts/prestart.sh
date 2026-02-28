@@ -36,6 +36,10 @@ else:
     print('Patch 1 skipped: already clean')
 "
 
+
+# Patch 2: Fix model list in index.html (Opus 4.6, remove emoji from labels)
+python3 /opt/her/scripts/patch_html.py
+
 # Step 4: Re-validate syntax after patches
 echo "$LOG_PREFIX Re-checking syntax after patches..."
 if ! node --check server.js 2>&1; then

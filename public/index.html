@@ -567,7 +567,26 @@
       <button id="send" disabled><svg><use href="#i-send"/></svg></button>
     </div>
   </div>
-  <div class="input-hint"><span>输入 / 打开快捷菜单</span><span class="usage-display" id="usageDisplay"></span></div>
+  <div class="input-hint">
+    <span>输入 / 打开快捷菜单</span>
+    <span style="display:flex;align-items:center;gap:8px">
+      <select id="modelSelect" style="background:transparent;border:none;color:var(--text3);font-size:11px;cursor:pointer;outline:none;appearance:none;-webkit-appearance:none;">
+        <optgroup label="旗舰">
+          <option value="claude-opus-4-6">Opus 4.6（最强）</option>
+        </optgroup>
+        <optgroup label="均衡">
+          <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+          <option value="claude-sonnet-4-5-20250929">Sonnet 4.5</option>
+          <option value="claude-sonnet-4-20250514">Sonnet 4.0</option>
+        </optgroup>
+        <optgroup label="🪙 省钱">
+          <option value="claude-3-5-haiku-20241022">Haiku 3.5（最便宜）</option>
+          <option value="claude-haiku-4-20250514">Haiku 4.0</option>
+        </optgroup>
+      </select>
+      <span class="usage-display" id="usageDisplay"></span>
+    </span>
+  </div>
   <div class="slash-menu" id="slashMenu">
     <div class="slash-item" data-target="win" data-prefix="[Windows] ">
       <svg><use href="#i-monitor"/></svg>
@@ -789,9 +808,19 @@ function connect(){
     reconnectAttempts=0;
     statusDot.className="hd-dot";
     if(wasDisconnected){
-      // 重连后刷新页面，让对话历史重新加载
       wasDisconnected=false;
-      window.location.reload();
+      // Clean up any pending tool/generation states from before the disconnect
+      finishCmd();
+      setGenerating(false);
+      // Show toast notification
+      toast("\u2705 \u91cd\u65b0\u8fde\u63a5\u6210\u529f");
+      // Insert a subtle system notice into the chat
+      const _sysMsg=document.createElement("div");
+      _sysMsg.className="msg";
+      _sysMsg.style.cssText="justify-content:center;margin:8px 0";
+      _sysMsg.innerHTML="<span style=\"font-size:12px;color:var(--text3);background:var(--bg2);padding:4px 14px;border-radius:12px;border:1px solid var(--border)\">\uD83D\uDD04 \u670d\u52a1\u5668\u5df2\u91cd\u542f\uff0c\u53ef\u4ee5\u7ee7\u7bca\u5bf9\u8bdd\u4e86</span>";
+      msgList.appendChild(_sysMsg);
+      scrollDown();
     }
   };
   ws.onclose=e=>{
@@ -1133,7 +1162,8 @@ function send(text){
 
   ws.send(JSON.stringify({
     message:aiText||"请分析这张图片",
-    images:pastedImages.map(i=>({base64:i.base64,mediaType:i.mediaType}))
+    images:pastedImages.map(i=>({base64:i.base64,mediaType:i.mediaType})),
+    model:document.getElementById("modelSelect").value
   }));
 
   input.value="";input.style.height="auto";
