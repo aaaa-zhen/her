@@ -45,7 +45,7 @@
   /* About Panel */
   .about-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:200;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .25s}
   .about-overlay.open{opacity:1;pointer-events:all}
-  .about-panel{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px;width:min(520px,92vw);max-height:85vh;overflow-y:auto;transform:translateY(10px);transition:transform .25s}
+  .about-panel{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px;width:min(520px,92vw);max-height:85vh;overflow-y:auto;overflow-x:hidden;transform:translateY(10px);transition:transform .25s}
   .about-overlay.open .about-panel{transform:translateY(0)}
   .about-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
   .about-title{font-size:16px;font-weight:600;color:var(--text)}

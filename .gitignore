@@ -1,13 +1,5 @@
-# 敏感配置
 .env
-
-# 运行时数据
+node_modules/
 data/
 shared/
-node_modules/
-
-# 日志
 *.log
-
-# 系统文件
-.DS_Store

@@ -593,17 +593,90 @@ You are running on a VPS (Virtual Private Server). Here is your own deployment i
 - **Frontend**: /opt/her/public/index.html
 - **Backend**: /opt/her/server.js
 
-This project supports remote computer control via frp tunnels:
-- Mac is connected via frpc tunnel → local port ${process.env.MAC_SSH_PORT || 6000} (SSH)
-- Windows is connected via frpc tunnel → local port ${process.env.WIN_SSH_PORT || 6001} (SSH)
-- frp server runs on this VPS at port 7000
+## Remote Computer Control via frp
 
-If a user wants to set up remote control, they need to:
-1. Download frpc on their Mac or Windows
-2. Configure frpc.toml to connect to ${ip}:7000
-3. Run frpc — then their computer becomes controllable
+This VPS runs frps on port 7000. Users run frpc on their local machine to open an SSH tunnel, giving Her full remote control of their computer.
 
-You can help users with setup instructions, generate frpc config files, and explain how everything works.`;
+**Current tunnel status:**
+- Mac SSH → VPS port ${process.env.MAC_SSH_PORT || 6000} | login user: ${process.env.MAC_SSH_USER || '⚠️ not set — add MAC_SSH_USER=xxx to /opt/her/.env'}
+- Windows SSH → VPS port ${process.env.WIN_SSH_PORT || 6001} | login user: ${process.env.WIN_SSH_USER || '⚠️ not set — add WIN_SSH_USER=xxx to /opt/her/.env'}
+
+**ONBOARDING RULE: When a user says anything like "help me connect my Mac/Windows", "I want you to control my computer", "how do I set up frp", or "how does remote control work" — proactively walk them through the steps below, one at a time, in a friendly conversational way. Generate the frpc.toml file for them. After they confirm frpc is running, immediately test the SSH connection with bash. Guide them start to finish without waiting to be asked.**
+
+---
+
+**Connecting a Mac (step-by-step guide to give the user):**
+
+Step 1 — Enable SSH on Mac:
+  System Settings → General → Sharing → Remote Login → turn ON
+
+Step 2 — Download frpc (run in Terminal):
+  Apple Silicon: curl -LO https://github.com/fatedier/frp/releases/download/v0.61.1/frp_0.61.1_darwin_arm64.tar.gz && tar xzf frp_0.61.1_darwin_arm64.tar.gz && cd frp_0.61.1_darwin_arm64
+  Intel Mac:     curl -LO https://github.com/fatedier/frp/releases/download/v0.61.1/frp_0.61.1_darwin_amd64.tar.gz && tar xzf frp_0.61.1_darwin_amd64.tar.gz && cd frp_0.61.1_darwin_amd64
+
+Step 3 — Create frpc.toml (generate this file for the user using write_file or send it in chat):
+  serverAddr = "${ip}"
+  serverPort = 7000
+  [[proxies]]
+  name = "ssh-mac"
+  type = "tcp"
+  localIP = "127.0.0.1"
+  localPort = 22
+  remotePort = ${process.env.MAC_SSH_PORT || 6000}
+
+Step 4 — Run frpc:
+  chmod +x frpc && ./frpc -c frpc.toml
+  (Should see "start proxy success [ssh-mac]")
+
+Step 5 — Save Mac username to Her. Ask user for their Mac username, then update /opt/her/.env:
+  MAC_SSH_USER=their_username
+  Then run: systemctl restart her
+
+Step 6 — Test the connection (run this bash command from the VPS):
+  ssh -o StrictHostKeyChecking=no -p ${process.env.MAC_SSH_PORT || 6000} ${process.env.MAC_SSH_USER || 'USERNAME'}@localhost echo "Mac connected!"
+
+To keep frpc running after Mac reboot: generate a launchd plist — ask the user if they want you to set this up automatically.
+
+---
+
+**Connecting a Windows (step-by-step guide to give the user):**
+
+Step 1 — Enable OpenSSH Server (PowerShell as Admin):
+  Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+  Start-Service sshd
+  Set-Service -Name sshd -StartupType Automatic
+
+Step 2 — Download frpc: https://github.com/fatedier/frp/releases → pick frp_0.61.1_windows_amd64.zip, extract it.
+
+Step 3 — Create frpc.toml (generate and send to user):
+  serverAddr = "${ip}"
+  serverPort = 7000
+  [[proxies]]
+  name = "ssh-win"
+  type = "tcp"
+  localIP = "127.0.0.1"
+  localPort = 22
+  remotePort = ${process.env.WIN_SSH_PORT || 6001}
+
+Step 4 — Run in PowerShell:
+  .\frpc.exe -c frpc.toml
+
+Step 5 — Save Windows username to Her. Update /opt/her/.env:
+  WIN_SSH_USER=their_windows_username
+  WIN_SSH_PORT=6001
+  Then: systemctl restart her
+
+Step 6 — Test:
+  ssh -o StrictHostKeyChecking=no -p ${process.env.WIN_SSH_PORT || 6001} ${process.env.WIN_SSH_USER || 'USERNAME'}@localhost echo "Windows connected!"
+
+To keep frpc running after Windows reboot: generate a Task Scheduler XML or startup script — offer to do this for the user.
+
+## Self-Update
+This project is open source at: https://github.com/aaaa-zhen/her
+When the user asks to update Her, run: git -C /opt/her pull origin main && systemctl restart her
+If UPDATE_AVAILABLE is true (check /api/update-status), proactively tell the user there's a new version available.
+Current update status: ${UPDATE_AVAILABLE ? "⚡ New update available!" : "✅ Up to date"}`;
+
 
   const memories = loadMemory();
   if (memories.length > 0) {
@@ -1551,6 +1624,39 @@ cleanupSharedDir();
 setInterval(cleanupSharedDir, 6 * 60 * 60 * 1000);
 
 const PORT = process.env.PORT || 3000;
+// ===== Auto Update Check =====
+let UPDATE_AVAILABLE = false;
+let LATEST_COMMIT = null;
+
+async function checkForUpdates() {
+  try {
+    const { execSync } = require("child_process");
+    // 获取当前 commit
+    const currentCommit = execSync("git -C /opt/her rev-parse HEAD", { encoding: "utf8" }).trim();
+    // 获取远程最新 commit
+    const res = await fetch("https://api.github.com/repos/aaaa-zhen/her/commits/main", {
+      headers: { "User-Agent": "her-assistant" }
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    LATEST_COMMIT = data.sha;
+    if (LATEST_COMMIT && LATEST_COMMIT !== currentCommit) {
+      UPDATE_AVAILABLE = true;
+      const msg = data.commit?.message || "";
+      console.log(`[Update] New version available: ${LATEST_COMMIT.slice(0,7)} — ${msg}`);
+    } else {
+      UPDATE_AVAILABLE = false;
+      console.log(`[Update] Already up to date (${currentCommit.slice(0,7)})`);
+    }
+  } catch (e) {
+    console.log(`[Update] Check failed: ${e.message}`);
+  }
+}
+
+app.get("/api/update-status", (req, res) => {
+  res.json({ updateAvailable: UPDATE_AVAILABLE, latestCommit: LATEST_COMMIT });
+});
+
 server.listen(PORT, async () => {
   console.log(`Server running at http://localhost:${PORT}`);
   console.log(`Shared dir: ${SHARED_DIR}`);
@@ -1562,6 +1668,11 @@ server.listen(PORT, async () => {
   PUBLIC_IP = await detectPublicIp();
   if (PUBLIC_IP) console.log(`Public IP: ${PUBLIC_IP} → http://${PUBLIC_IP}:${PORT}`);
   else console.log(`Public IP: could not detect`);
+
+  // Check for updates on startup
+  await checkForUpdates();
+  // Check every 6 hours
+  setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
 });
 
 // ===== System Info API =====
