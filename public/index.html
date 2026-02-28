@@ -604,6 +604,9 @@ const imgPreviews= document.getElementById("img-previews");
 
 let ws, pastedImages = [];
 let reconnectDelay = 1000;
+let reconnectAttempts = 0;
+let wasDisconnected = false;
+let disconnectTime = null;
 let isGenerating = false;
 const statusText = document.getElementById("statusText");
 let lastClients = [];
@@ -783,13 +786,24 @@ function connect(){
   ws=new WebSocket(`${proto}//${location.host}`);
   ws.onopen=()=>{
     reconnectDelay=1000;
+    reconnectAttempts=0;
     statusDot.className="hd-dot";
+    if(wasDisconnected){
+      // 重连后刷新页面，让对话历史重新加载
+      wasDisconnected=false;
+      window.location.reload();
+    }
   };
   ws.onclose=e=>{
     statusDot.className="hd-dot offline";
     if(e.code===1008||e.code===4401){window.location.href="/login";return}
-    setTimeout(connect,reconnectDelay);
-    reconnectDelay=Math.min(reconnectDelay*2,30000);
+    wasDisconnected=true;
+    disconnectTime=Date.now();
+    // 前5次每1秒重试，之后逐渐退避，最长10秒
+    if(reconnectDelay<=1000) reconnectAttempts=(reconnectAttempts||0)+1;
+    const delay=reconnectAttempts<=5?1000:Math.min(reconnectDelay*1.5,10000);
+    setTimeout(connect, delay);
+    reconnectDelay=delay;
   };
   ws.onmessage=e=>handle(JSON.parse(e.data));
 }

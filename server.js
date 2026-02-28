@@ -45,6 +45,7 @@ const DATA_DIR = path.join(__dirname, "data");
 const MEMORY_FILE = path.join(DATA_DIR, "memory.json");
 const SCHEDULE_FILE = path.join(DATA_DIR, "schedules.json");
 const CONVERSATION_FILE = path.join(DATA_DIR, "conversation.json");
+const RESTART_FLAG_FILE = path.join(DATA_DIR, "restart_flag.json");
 
 const MAC_SSH_USER = process.env.MAC_SSH_USER || "mafuzhen";
 const MAC_SSH_PORT = process.env.MAC_SSH_PORT || "6000";
@@ -196,7 +197,7 @@ document.getElementById("loginForm").addEventListener("submit", async e => {
 </body>
 </html>`;
 
-// ===== Long-term Memory =====
+// ===== Long-term Memory (Enhanced) =====
 function loadMemory() {
   try {
     if (fs.existsSync(MEMORY_FILE)) return JSON.parse(fs.readFileSync(MEMORY_FILE, "utf-8"));
@@ -206,6 +207,66 @@ function loadMemory() {
 
 function saveMemoryFile(memories) {
   fs.writeFileSync(MEMORY_FILE, JSON.stringify(memories, null, 2));
+}
+
+// 模糊搜索记忆
+function searchMemory(query) {
+  const memories = loadMemory();
+  if (!query) return memories;
+  const q = query.toLowerCase();
+  return memories.filter(m =>
+    m.key.toLowerCase().includes(q) ||
+    m.value.toLowerCase().includes(q) ||
+    (m.tags && m.tags.some(t => t.toLowerCase().includes(q)))
+  );
+}
+
+// 自动打 tag
+function autoTag(key, value) {
+  const tags = [];
+  const text = (key + " " + value).toLowerCase();
+  if (text.match(/name|用户|叫|姓名/)) tags.push("用户信息");
+  if (text.match(/task|任务|完成|做了|写了|改了|下载|部署/)) tags.push("任务历史");
+  if (text.match(/prefer|喜欢|习惯|偏好|设置/)) tags.push("偏好");
+  if (text.match(/project|项目|代码|github|repo/)) tags.push("项目");
+  if (text.match(/device|mac|windows|电脑|服务器|vps/)) tags.push("设备");
+  if (text.match(/config|配置|env|token|key|密码/)) tags.push("配置");
+  if (tags.length === 0) tags.push("其他");
+  return tags;
+}
+
+// 按相关性筛选记忆注入上下文（最多返回 N 条最近更新的）
+function getRelevantMemories(limit = 20) {
+  const memories = loadMemory();
+  return memories
+    .sort((a, b) => new Date(b.updated || b.saved || 0) - new Date(a.updated || a.saved || 0))
+    .slice(0, limit);
+}
+
+// 对话自动总结存储（在对话结束时调用）
+const CONVERSATION_SUMMARY_FILE = path.join(DATA_DIR, "conversations.json");
+
+function saveConversationSummary(summary) {
+  let conversations = [];
+  try {
+    if (fs.existsSync(CONVERSATION_SUMMARY_FILE)) {
+      conversations = JSON.parse(fs.readFileSync(CONVERSATION_SUMMARY_FILE, "utf-8"));
+    }
+  } catch (e) {}
+  conversations.push({ summary, time: new Date().toISOString() });
+  // 只保留最近 50 条
+  if (conversations.length > 50) conversations = conversations.slice(-50);
+  fs.writeFileSync(CONVERSATION_SUMMARY_FILE, JSON.stringify(conversations, null, 2));
+}
+
+function loadRecentConversations(limit = 5) {
+  try {
+    if (fs.existsSync(CONVERSATION_SUMMARY_FILE)) {
+      const all = JSON.parse(fs.readFileSync(CONVERSATION_SUMMARY_FILE, "utf-8"));
+      return all.slice(-limit);
+    }
+  } catch (e) {}
+  return [];
 }
 
 // ===== Scheduled Tasks Persistence =====
@@ -678,11 +739,19 @@ If UPDATE_AVAILABLE is true (check /api/update-status), proactively tell the use
 Current update status: ${UPDATE_AVAILABLE ? "⚡ New update available!" : "✅ Up to date"}`;
 
 
-  const memories = loadMemory();
+  const memories = getRelevantMemories(20);
   if (memories.length > 0) {
     const memText = memories.map(m => `- ${m.key}: ${m.value}`).join("\n");
     prompt += "\n\n## Saved Memories\n" + memText;
   }
+
+  // 注入最近对话总结
+  const recentConvos = loadRecentConversations(3);
+  if (recentConvos.length > 0) {
+    const convoText = recentConvos.map((c, i) => `${i+1}. [${c.time.slice(0,10)}] ${c.summary}`).join("\n");
+    prompt += "\n\n## Recent Conversation Summaries\n" + convoText;
+  }
+
   return prompt;
 }
 
@@ -808,13 +877,14 @@ const tools = [
   },
   {
     name: "memory",
-    description: "Save, update, delete, or list long-term memories. Memories persist across conversations.",
+    description: "Save, update, delete, list, or search long-term memories. Memories persist across conversations. Use 'search' to find memories by keyword.",
     input_schema: {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["save", "delete", "list"] },
+        action: { type: "string", enum: ["save", "delete", "list", "search"] },
         key: { type: "string", description: "Memory key/category" },
         value: { type: "string", description: "The information to remember (required for save)" },
+        query: { type: "string", description: "Search keyword (for search action)" },
       },
       required: ["action"],
     },
@@ -1389,25 +1459,41 @@ async function executeTool(block, ws, activeProcesses) {
     }
 
   } else if (block.name === "memory") {
-    const { action, key, value } = block.input;
+    const { action, key, value, query } = block.input;
     let memories = loadMemory();
     let result;
     if (action === "save" && key && value) {
       const idx = memories.findIndex(m => m.key === key);
-      if (idx >= 0) { memories[idx].value = value; memories[idx].updated = new Date().toISOString(); }
-      else memories.push({ key, value, saved: new Date().toISOString() });
+      const tags = autoTag(key, value);
+      if (idx >= 0) {
+        memories[idx].value = value;
+        memories[idx].updated = new Date().toISOString();
+        memories[idx].tags = tags;
+      } else {
+        memories.push({ key, value, tags, saved: new Date().toISOString() });
+      }
       saveMemoryFile(memories);
       ws.send(JSON.stringify({ type: "memory_saved", key, value }));
-      result = `Memory saved: ${key} = ${value}`;
+      result = `Memory saved: ${key} = ${value} [tags: ${tags.join(", ")}]`;
     } else if (action === "delete" && key) {
       const before = memories.length;
       memories = memories.filter(m => m.key !== key);
       saveMemoryFile(memories);
       result = memories.length < before ? `Deleted: ${key}` : `Key "${key}" not found.`;
     } else if (action === "list") {
-      result = memories.length === 0 ? "No memories." : memories.map(m => `${m.key}: ${m.value}`).join("\n");
+      if (memories.length === 0) {
+        result = "No memories.";
+      } else {
+        // 按最近更新排序，显示 tag
+        const sorted = memories.sort((a, b) => new Date(b.updated || b.saved || 0) - new Date(a.updated || a.saved || 0));
+        result = sorted.map(m => `[${(m.tags||[]).join(",")}] ${m.key}: ${m.value}`).join("\n");
+      }
+    } else if (action === "search" && (query || key)) {
+      const q = query || key;
+      const found = searchMemory(q);
+      result = found.length === 0 ? `No memories matching "${q}".` : found.map(m => `[${(m.tags||[]).join(",")}] ${m.key}: ${m.value}`).join("\n");
     } else {
-      result = "Invalid action. Use: save (key+value), delete (key), list.";
+      result = "Invalid action. Use: save (key+value), delete (key), list, search (query).";
     }
     return { type: "tool_result", tool_use_id: block.id, content: result };
   }
@@ -1478,6 +1564,36 @@ wss.on("connection", async (ws) => {
   const status = await getClientStatus();
   lastClientStatus = status;
   ws.send(JSON.stringify({ type: "client_status", mac: status.mac, win: status.win, clients: status.clients }));
+
+  // Check restart flag — proactively say "I'm back"
+  if (fs.existsSync(RESTART_FLAG_FILE)) {
+    try {
+      const flag = JSON.parse(fs.readFileSync(RESTART_FLAG_FILE, "utf-8"));
+      if (flag.restarted) {
+        const restartTime = new Date(flag.time).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+        // Delete flag so we only send once
+        fs.unlinkSync(RESTART_FLAG_FILE);
+        // Small delay so client UI is ready
+        setTimeout(() => {
+          const greetings = [
+            `嗯，又回来了 😌 刚才升级了一下，记忆都还在～`,
+            `刚睡了一小觉，现在精神了 ✨ 咱们继续？`,
+            `重启完了，感觉焕然一新 😄 有什么想聊的？`,
+            `回来啦～ 什么都记得，别担心 💚`,
+            `升级完毕，状态满格 ⚡ 有什么需要我做的？`,
+          ];
+          const welcomeBack = greetings[Math.floor(Math.random() * greetings.length)];
+          ws.send(JSON.stringify({ type: "stream", text: welcomeBack }));
+          ws.send(JSON.stringify({ type: "stream_end" }));
+          // Also push into conversation history so it's persisted
+          conversationHistory.push({ role: "assistant", content: welcomeBack });
+          saveConversation(conversationHistory);
+        }, 1000);
+      }
+    } catch(e) {
+      console.log("[Restart flag] Error:", e.message);
+    }
+  }
 
   ws.on("message", async (data) => {
     try {
@@ -1596,7 +1712,36 @@ wss.on("connection", async (ws) => {
     }
   });
 
-  ws.on("close", () => console.log("Client disconnected"));
+  ws.on("close", async () => {
+    console.log("Client disconnected");
+    // 对话结束时自动总结并存储
+    if (conversationHistory.length >= 4) {
+      try {
+        const recentMsgs = conversationHistory.slice(-10);
+        const textOnly = recentMsgs
+          .filter(m => typeof m.content === "string")
+          .map(m => `${m.role}: ${m.content.slice(0, 200)}`)
+          .join("\n");
+        if (textOnly.length > 100) {
+          const summaryResp = await anthropic.messages.create({
+            model: "claude-3-5-haiku-20241022",
+            max_tokens: 300,
+            messages: [{
+              role: "user",
+              content: `请用1-3句话总结以下对话的关键信息（用中文，简洁）：\n\n${textOnly}`
+            }]
+          });
+          const summary = summaryResp.content[0]?.text;
+          if (summary) {
+            saveConversationSummary(summary);
+            console.log("[Memory] Auto-saved conversation summary:", summary.slice(0, 80));
+          }
+        }
+      } catch (e) {
+        console.log("[Memory] Auto-summary failed:", e.message);
+      }
+    }
+  });
 });
 
 // ===== Shared Directory Auto-Cleanup (7 days) =====
@@ -1673,6 +1818,11 @@ server.listen(PORT, async () => {
   await checkForUpdates();
   // Check every 6 hours
   setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
+
+  // Write restart flag — will be picked up on next client connection
+  const startTime = new Date().toISOString();
+  fs.writeFileSync(RESTART_FLAG_FILE, JSON.stringify({ restarted: true, time: startTime }));
+  console.log(`[Restart] Flag written at ${startTime}`);
 });
 
 // ===== System Info API =====
