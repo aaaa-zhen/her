@@ -1,0 +1,47 @@
+name: Build Her App
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile || bun install
+
+      - name: Build all platforms
+        run: |
+          mkdir -p dist
+          bun build --compile app.js --target=bun-darwin-arm64 --external playwright --external playwright-core --external electron --outfile dist/her-mac-arm64
+          bun build --compile app.js --target=bun-darwin-x64 --external playwright --external playwright-core --external electron --outfile dist/her-mac-x64
+          bun build --compile app.js --target=bun-windows-x64 --external playwright --external playwright-core --external electron --outfile dist/her-windows.exe
+          bun build --compile app.js --target=bun-linux-x64 --external playwright --external playwright-core --external electron --outfile dist/her-linux
+
+      - name: Build agents
+        run: |
+          bun build --compile agent/her-agent.js --target=bun-darwin-arm64 --outfile dist/her-agent-mac-arm64
+          bun build --compile agent/her-agent.js --target=bun-darwin-x64 --outfile dist/her-agent-mac-x64
+          bun build --compile agent/her-agent.js --target=bun-windows-x64 --outfile dist/her-agent-windows.exe
+          bun build --compile agent/her-agent.js --target=bun-linux-x64 --outfile dist/her-agent-linux
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: her-binaries
+          path: dist/
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

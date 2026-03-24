@@ -1,0 +1,11 @@
+.env
+node_modules/
+data/
+shared/
+dist/
+*.log
+her-app
+agent/her-agent
+.ssh-ctrl/
+.DS_Store
+.claude/
