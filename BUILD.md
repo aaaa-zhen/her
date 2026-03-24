@@ -3,33 +3,50 @@
 ## Prerequisites
 
 - [Bun](https://bun.sh) (`curl -fsSL https://bun.sh/install | bash`)
+- [Rust](https://rustup.rs) (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+- Tauri CLI: `cargo install tauri-cli`
 
-## Local Build
+## Tauri Desktop App (recommended)
 
 ```bash
 # Install dependencies
 bun install
 
-# Build Her App (all platforms)
-bun build --compile app.js --target=bun-darwin-arm64 --external playwright --external playwright-core --external electron --outfile dist/her-mac-arm64
-bun build --compile app.js --target=bun-darwin-x64 --external playwright --external playwright-core --external electron --outfile dist/her-mac-x64
-bun build --compile app.js --target=bun-windows-x64 --external playwright --external playwright-core --external electron --outfile dist/her-windows.exe
-bun build --compile app.js --target=bun-linux-x64 --external playwright --external playwright-core --external electron --outfile dist/her-linux
+# 1. Compile sidecar
+mkdir -p src-tauri/binaries
+bun build --compile app.js \
+  --external playwright --external playwright-core --external electron \
+  --outfile src-tauri/binaries/her-sidecar-aarch64-apple-darwin
 
-# Build Her Agent (all platforms)
-bun build --compile agent/her-agent.js --target=bun-darwin-arm64 --outfile dist/her-agent-mac-arm64
-bun build --compile agent/her-agent.js --target=bun-darwin-x64 --outfile dist/her-agent-mac-x64
-bun build --compile agent/her-agent.js --target=bun-windows-x64 --outfile dist/her-agent-windows.exe
-bun build --compile agent/her-agent.js --target=bun-linux-x64 --outfile dist/her-agent-linux
+# 2. Build .app
+cargo tauri build --bundles app
 ```
 
-## Build Current Platform Only
+Output: `src-tauri/target/release/bundle/macos/Her.app`
+
+> **Note**: `src-tauri/target/` (3G+) and `src-tauri/binaries/` (60M) are build artifacts, already gitignored. Can safely delete them; they rebuild from source.
+
+## Standalone Binary (no Tauri)
 
 ```bash
 # Mac (Apple Silicon)
 bun build --compile app.js --external playwright --external playwright-core --external electron --outfile her-app
-bun build --compile agent/her-agent.js --outfile her-agent
+
+# All platforms
+bun build --compile app.js --target=bun-darwin-arm64 --external playwright --external playwright-core --external electron --outfile dist/her-mac-arm64
+bun build --compile app.js --target=bun-darwin-x64 --external playwright --external playwright-core --external electron --outfile dist/her-mac-x64
+bun build --compile app.js --target=bun-windows-x64 --external playwright --external playwright-core --external electron --outfile dist/her-windows.exe
+bun build --compile app.js --target=bun-linux-x64 --external playwright --external playwright-core --external electron --outfile dist/her-linux
 ```
+
+## API Configuration
+
+Uses [PackyAPI](https://www.packyapi.com) as multi-model proxy. One API key supports all models.
+
+When creating a PackyAPI token, select these groups:
+- **Aws-officially** — Claude (Sonnet 4.6, Opus 4.6)
+- **Codex** — GPT (GPT-5)
+- **Bailian** — Kimi K2.5, GLM-5, MiniMax M2.7
 
 ## GitHub Actions (CI)
 
@@ -39,27 +56,3 @@ Push a tag to trigger automatic builds + GitHub Release:
 git tag v1.0.0
 git push origin v1.0.0
 ```
-
-Or manually trigger via GitHub Actions > Build Her App > Run workflow.
-
-Build artifacts (all platforms) are uploaded automatically. Tagged builds also create a GitHub Release with download links.
-
-## Output
-
-| File | Platform | Description |
-|------|----------|-------------|
-| `her-mac-arm64` | macOS Apple Silicon | Her App |
-| `her-mac-x64` | macOS Intel | Her App |
-| `her-windows.exe` | Windows | Her App |
-| `her-linux` | Linux x64 | Her App |
-| `her-agent-mac-arm64` | macOS Apple Silicon | Local Agent |
-| `her-agent-mac-x64` | macOS Intel | Local Agent |
-| `her-agent-windows.exe` | Windows | Local Agent |
-| `her-agent-linux` | Linux x64 | Local Agent |
-
-## How Users Use It
-
-1. Download `her-app` for their platform
-2. Double-click to run — browser opens automatically
-3. Open Settings (gear icon) to configure API key
-4. (Optional) Download `her-agent` to let Her control their local computer
