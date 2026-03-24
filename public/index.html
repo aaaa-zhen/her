@@ -69,9 +69,6 @@
   .s-save-btn:active{transform:scale(.98)}
   .s-status{font-size:12px;text-align:center;margin-top:8px;color:var(--accent);opacity:0;transition:opacity .3s}
   .s-status.show{opacity:1}
-  .s-provider-tabs{display:flex;gap:6px;margin-bottom:14px}
-  .s-tab{flex:1;padding:8px 12px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text3);font-size:13px;font-weight:500;cursor:pointer;text-align:center;transition:all .2s}
-  .s-tab.active{background:rgba(110,231,183,.1);border-color:rgba(110,231,183,.3);color:var(--accent)}
   .usage-display{
     font-size:11px;color:var(--text3);font-variant-numeric:tabular-nums;
     display:none;
@@ -486,40 +483,31 @@
     </div>
 
     <div class="about-section">
-      <div class="about-section-title">AI Provider</div>
-      <div class="s-provider-tabs">
-        <button class="s-tab" data-provider="anthropic" id="tab-anthropic">Anthropic</button>
-        <button class="s-tab" data-provider="openai" id="tab-openai">OpenAI Compatible</button>
-      </div>
-
-      <div id="settings-anthropic">
-        <div class="s-field">
-          <label class="s-label">API Key</label>
-          <input class="s-input" type="password" id="s-anthropic-key" placeholder="sk-...">
-        </div>
-        <div class="s-field">
-          <label class="s-label">Base URL（留空用官方）</label>
-          <input class="s-input" type="text" id="s-anthropic-url" placeholder="https://api.anthropic.com">
+      <div class="about-section-title">API Settings</div>
+      <div class="s-field">
+        <label class="s-label">API Key</label>
+        <input class="s-input" type="password" id="s-api-key" placeholder="sk-...">
+        <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.8">
+          PackyAPI 创建令牌时，请勾选以下分组：<br>
+          <span style="color:var(--accent)">Aws-officially</span> Claude &nbsp;|&nbsp;
+          <span style="color:var(--accent)">Codex</span> GPT &nbsp;|&nbsp;
+          <span style="color:var(--accent)">Bailian</span> Kimi / GLM / MiniMax
         </div>
       </div>
-
-      <div id="settings-openai" style="display:none">
-        <div class="s-field">
-          <label class="s-label">API Key</label>
-          <input class="s-input" type="password" id="s-openai-key" placeholder="sk-...">
-        </div>
-        <div class="s-field">
-          <label class="s-label">Base URL</label>
-          <input class="s-input" type="text" id="s-openai-url" placeholder="https://api.moonshot.cn/v1">
-        </div>
-        <div class="s-field">
-          <label class="s-label">Model</label>
-          <input class="s-input" type="text" id="s-openai-model" placeholder="kimi-k2.5">
-        </div>
-        <div class="s-field">
-          <label class="s-label">Extra Body（JSON，可选）</label>
-          <input class="s-input" type="text" id="s-openai-extra" placeholder='{"thinking":{"type":"disabled"}}'>
-        </div>
+      <div class="s-field">
+        <label class="s-label">Base URL</label>
+        <input class="s-input" type="text" id="s-base-url" placeholder="https://www.packyapi.com">
+      </div>
+      <div class="s-field">
+        <label class="s-label">Default Model</label>
+        <select class="s-input" id="s-model">
+          <option value="claude-sonnet-4-6">Claude Sonnet 4.6（Aws-officially）</option>
+          <option value="claude-opus-4-6">Claude Opus 4.6（Aws-officially）</option>
+          <option value="gpt-5">GPT-5（Codex）</option>
+          <option value="kimi-k2.5">Kimi K2.5（Bailian）</option>
+          <option value="glm-5">GLM-5（Bailian）</option>
+          <option value="MiniMax-M2.7">MiniMax M2.7（Bailian）</option>
+        </select>
       </div>
     </div>
 
@@ -1426,57 +1414,22 @@ async function loadModels() {
 loadModels();
 
 // ===== Settings Panel =====
-let currentProvider = "anthropic";
-
 async function loadSettingsPanel() {
   try {
     const res = await fetch("/api/settings");
     const cfg = await res.json();
-    currentProvider = cfg.provider;
-    document.getElementById("s-anthropic-key").value = cfg.anthropicApiKey || "";
-    document.getElementById("s-anthropic-url").value = cfg.anthropicBaseUrl || "";
-    document.getElementById("s-openai-key").value = cfg.openaiApiKey || "";
-    document.getElementById("s-openai-url").value = cfg.openaiBaseUrl || "";
-    document.getElementById("s-openai-model").value = cfg.openaiModel || "";
-    document.getElementById("s-openai-extra").value = cfg.openaiExtraBody && Object.keys(cfg.openaiExtraBody).length > 0 ? JSON.stringify(cfg.openaiExtraBody) : "";
-    updateProviderTabs();
+    document.getElementById("s-api-key").value = cfg.apiKey || "";
+    document.getElementById("s-base-url").value = cfg.baseUrl || "";
+    document.getElementById("s-model").value = cfg.model || "claude-sonnet-4-6";
   } catch(e) { console.log("Failed to load settings:", e); }
 }
 
-function updateProviderTabs() {
-  document.querySelectorAll(".s-tab").forEach(t => t.classList.toggle("active", t.dataset.provider === currentProvider));
-  document.getElementById("settings-anthropic").style.display = currentProvider === "anthropic" ? "block" : "none";
-  document.getElementById("settings-openai").style.display = currentProvider === "openai" ? "block" : "none";
-}
-
-document.querySelectorAll(".s-tab").forEach(tab => {
-  tab.addEventListener("click", () => {
-    currentProvider = tab.dataset.provider;
-    updateProviderTabs();
-  });
-});
-
 document.getElementById("s-save").addEventListener("click", async () => {
-  const body = { provider: currentProvider };
-  if (currentProvider === "anthropic") {
-    const key = document.getElementById("s-anthropic-key").value.trim();
-    const url = document.getElementById("s-anthropic-url").value.trim();
-    if (key && !key.startsWith("sk-...")) body.anthropicApiKey = key;
-    body.anthropicBaseUrl = url;
-  } else {
-    const key = document.getElementById("s-openai-key").value.trim();
-    const url = document.getElementById("s-openai-url").value.trim();
-    const model = document.getElementById("s-openai-model").value.trim();
-    const extra = document.getElementById("s-openai-extra").value.trim();
-    if (key && !key.startsWith("sk-...")) body.openaiApiKey = key;
-    body.openaiBaseUrl = url;
-    body.openaiModel = model;
-    if (extra) {
-      try { body.openaiExtraBody = JSON.parse(extra); } catch(e) { toast("Extra Body JSON 格式错误"); return; }
-    } else {
-      body.openaiExtraBody = {};
-    }
-  }
+  const body = {};
+  const key = document.getElementById("s-api-key").value.trim();
+  if (key && !key.startsWith("sk-...")) body.apiKey = key;
+  body.baseUrl = document.getElementById("s-base-url").value.trim();
+  body.model = document.getElementById("s-model").value;
   try {
     const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (res.ok) {

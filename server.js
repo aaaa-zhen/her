@@ -96,26 +96,16 @@ app.post("/api/settings", (req, res) => {
 });
 
 app.get("/api/models", (req, res) => {
-  const provider = ai.getProvider();
   const defaultModel = ai.getDefaultModel();
-  // Models configurable via OPENAI_MODELS env (comma-separated) or defaults per provider
-  let models;
-  if (provider === "anthropic") {
-    models = [
-      { id: "claude-opus-4-6", name: "Opus 4.6（最强）", group: "旗舰" },
-      { id: "claude-sonnet-4-6", name: "Sonnet 4.6", group: "均衡" },
-      { id: "claude-sonnet-4-5-20250929", name: "Sonnet 4.5", group: "均衡" },
-      { id: "claude-3-5-haiku-20241022", name: "Haiku 3.5（最便宜）", group: "省钱" },
-    ];
-  } else if (process.env.OPENAI_MODELS) {
-    models = process.env.OPENAI_MODELS.split(",").map(m => {
-      const trimmed = m.trim();
-      return { id: trimmed, name: trimmed, group: "模型" };
-    });
-  } else {
-    models = [{ id: defaultModel, name: defaultModel, group: "模型" }];
-  }
-  res.json({ provider, defaultModel, models });
+  const models = [
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", group: "Aws-officially" },
+    { id: "claude-opus-4-6", name: "Claude Opus 4.6", group: "Aws-officially" },
+    { id: "gpt-5", name: "GPT-5", group: "Codex" },
+    { id: "kimi-k2.5", name: "Kimi K2.5", group: "Bailian" },
+    { id: "glm-5", name: "GLM-5", group: "Bailian" },
+    { id: "MiniMax-M2.7", name: "MiniMax M2.7", group: "Bailian" },
+  ];
+  res.json({ defaultModel, models });
 });
 
 // ===== Token Estimation (CJK-aware) =====
