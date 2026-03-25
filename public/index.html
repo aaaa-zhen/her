@@ -218,6 +218,19 @@
   .cmd-detail-out{padding:8px 12px;color:var(--text2);border-top:1px solid var(--border);white-space:pre-wrap;word-break:break-all;line-height:1.5;max-height:200px;overflow-y:auto}
 
   /* === FILE CARD === */
+  /* Progress bar */
+  .progress-bar{
+    margin:8px 0;background:var(--surface);border:1px solid var(--border);
+    border-radius:10px;overflow:hidden;max-width:340px;position:relative;height:28px;
+  }
+  .progress-fill{
+    height:100%;background:linear-gradient(90deg,var(--accent-dim),rgba(110,231,183,.25));
+    border-radius:10px;transition:width .3s ease;width:0%;
+  }
+  .progress-text{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:11px;font-weight:600;color:var(--accent);
+  }
   .file-card{
     margin:8px 0;background:var(--surface);border:1px solid var(--border);
     border-radius:12px;overflow:hidden;max-width:340px;transition:border-color .2s;
@@ -488,25 +501,39 @@
         <label class="s-label">API Key</label>
         <input class="s-input" type="password" id="s-api-key" placeholder="sk-...">
         <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.8">
-          PackyAPI 创建令牌时，请勾选以下分组：<br>
-          <span style="color:var(--accent)">Aws-officially</span> Claude &nbsp;|&nbsp;
-          <span style="color:var(--accent)">Codex</span> GPT &nbsp;|&nbsp;
-          <span style="color:var(--accent)">Bailian</span> Kimi / GLM / MiniMax
+          <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);text-decoration:none">openrouter.ai</a> 获取 API Key
         </div>
       </div>
       <div class="s-field">
         <label class="s-label">Base URL</label>
-        <input class="s-input" type="text" id="s-base-url" placeholder="https://www.packyapi.com">
+        <input class="s-input" type="text" id="s-base-url" placeholder="https://openrouter.ai/api/v1">
       </div>
       <div class="s-field">
         <label class="s-label">Default Model</label>
         <select class="s-input" id="s-model">
-          <option value="claude-sonnet-4-6">Claude Sonnet 4.6（Aws-officially）</option>
-          <option value="claude-opus-4-6">Claude Opus 4.6（Aws-officially）</option>
-          <option value="gpt-5">GPT-5（Codex）</option>
-          <option value="kimi-k2.5">Kimi K2.5（Bailian）</option>
-          <option value="glm-5">GLM-5（Bailian）</option>
-          <option value="MiniMax-M2.7">MiniMax M2.7（Bailian）</option>
+          <optgroup label="Anthropic">
+            <option value="anthropic/claude-sonnet-4.6">Claude Sonnet 4.6</option>
+            <option value="anthropic/claude-opus-4.6">Claude Opus 4.6</option>
+            <option value="anthropic/claude-opus-4.5">Claude Opus 4.5</option>
+          </optgroup>
+          <optgroup label="Google">
+            <option value="google/gemini-3.1-pro-preview">Gemini 3.1 Pro</option>
+            <option value="google/gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite</option>
+            <option value="google/gemini-3.1-flash-image-preview">Gemini 3.1 Image</option>
+          </optgroup>
+          <optgroup label="OpenAI">
+            <option value="openai/gpt-5">GPT-5</option>
+            <option value="openai/gpt-5-mini">GPT-5 Mini</option>
+            <option value="openai/gpt-5.4-nano">GPT-5.4 Nano</option>
+          </optgroup>
+          <optgroup label="DeepSeek">
+            <option value="deepseek/deepseek-r1">DeepSeek R1</option>
+            <option value="deepseek/deepseek-v3-0324">DeepSeek V3</option>
+          </optgroup>
+          <optgroup label="其他">
+            <option value="xiaomi/mimo-v2-pro">MiMo V2 Pro</option>
+            <option value="minimax/minimax-m2.7">MiniMax M2.7</option>
+          </optgroup>
         </select>
       </div>
     </div>
@@ -914,8 +941,32 @@ function handle(data){
     finalizeHerGroup();
     scrollDown();
 
+  }else if(data.type==="progress"){
+    // Download/task progress bar
+    const group=getHerGroup();
+    let bar=group.querySelector(".progress-bar");
+    if(!bar){
+      bar=document.createElement("div");
+      bar.className="progress-bar";
+      bar.innerHTML='<div class="progress-fill"></div><div class="progress-text"></div>';
+      group.appendChild(bar);
+    }
+    const fill=bar.querySelector(".progress-fill");
+    const text=bar.querySelector(".progress-text");
+    fill.style.width=Math.min(100,data.percent||0)+"%";
+    text.textContent=data.detail||`${data.percent}%`;
+    if(data.percent>=100){
+      setTimeout(()=>{try{bar.remove();}catch(_){}},3000);
+    }
+    scrollDown();
+
   }else if(data.type==="memory_saved"){
     toast("已记住: "+data.key);
+
+  }else if(data.type==="skill_saved"){
+    const verb=data.action==="created"?"💡 学会了":"🔄 更新了";
+    const bg=data.background?" (自动)":"";
+    toast(`${verb}: ${data.name}${bg}`);
 
   }else if(data.type==="compaction"){
     finalizeHerGroup();
@@ -1032,11 +1083,7 @@ function handle(data){
     return;
 
   }else if(data.type==="usage"){
-    const el=document.getElementById("usageDisplay");
-    const tokens=data.input_tokens+data.output_tokens;
-    const k=tokens>=1000?(tokens/1000).toFixed(1)+"k":tokens;
-    el.textContent=`${k} tokens · $${data.total_cost}`;
-    el.className="usage-display visible";
+    // Hidden — no token/cost display
     return;
 
   }else if(data.type==="restore"){
@@ -1420,7 +1467,7 @@ async function loadSettingsPanel() {
     const cfg = await res.json();
     document.getElementById("s-api-key").value = cfg.apiKey || "";
     document.getElementById("s-base-url").value = cfg.baseUrl || "";
-    document.getElementById("s-model").value = cfg.model || "claude-sonnet-4-6";
+    document.getElementById("s-model").value = cfg.model || "anthropic/claude-sonnet-4.6";
   } catch(e) { console.log("Failed to load settings:", e); }
 }
 

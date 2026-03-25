@@ -9,3 +9,5 @@ agent/her-agent
 .ssh-ctrl/
 .DS_Store
 .claude/
+src-tauri/target/
+src-tauri/binaries/

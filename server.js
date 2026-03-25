@@ -75,6 +75,20 @@ app.post("/api/upload", uploadMiddleware.single("file"), (req, res) => {
   res.json({ filename: req.file.filename, size: req.file.size });
 });
 
+// Serve any local file by absolute path (for send_local_file tool)
+app.get("/api/local-file", (req, res) => {
+  const filePath = req.query.path;
+  if (!filePath || !path.isAbsolute(filePath)) return res.status(400).json({ error: "Invalid path" });
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Not found" });
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) return res.status(400).json({ error: "Not a file" });
+    res.sendFile(filePath);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get("/api/system-info", async (req, res) => {
   const port = process.env.PORT || 3000;
   const ip = PUBLIC_IP || await detectPublicIp() || "unknown";
@@ -98,12 +112,19 @@ app.post("/api/settings", (req, res) => {
 app.get("/api/models", (req, res) => {
   const defaultModel = ai.getDefaultModel();
   const models = [
-    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", group: "Aws-officially" },
-    { id: "claude-opus-4-6", name: "Claude Opus 4.6", group: "Aws-officially" },
-    { id: "gpt-5", name: "GPT-5", group: "Codex" },
-    { id: "kimi-k2.5", name: "Kimi K2.5", group: "Bailian" },
-    { id: "glm-5", name: "GLM-5", group: "Bailian" },
-    { id: "MiniMax-M2.7", name: "MiniMax M2.7", group: "Bailian" },
+    { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", group: "Anthropic" },
+    { id: "anthropic/claude-opus-4.6", name: "Claude Opus 4.6", group: "Anthropic" },
+    { id: "anthropic/claude-opus-4.5", name: "Claude Opus 4.5", group: "Anthropic" },
+    { id: "google/gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", group: "Google" },
+    { id: "google/gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite", group: "Google" },
+    { id: "google/gemini-3.1-flash-image-preview", name: "Gemini 3.1 Image", group: "Google" },
+    { id: "openai/gpt-5", name: "GPT-5", group: "OpenAI" },
+    { id: "openai/gpt-5-mini", name: "GPT-5 Mini", group: "OpenAI" },
+    { id: "openai/gpt-5.4-nano", name: "GPT-5.4 Nano", group: "OpenAI" },
+    { id: "deepseek/deepseek-r1", name: "DeepSeek R1", group: "DeepSeek" },
+    { id: "deepseek/deepseek-v3-0324", name: "DeepSeek V3", group: "DeepSeek" },
+    { id: "xiaomi/mimo-v2-pro", name: "MiMo V2 Pro", group: "Xiaomi" },
+    { id: "minimax/minimax-m2.7", name: "MiniMax M2.7", group: "MiniMax" },
   ];
   res.json({ defaultModel, models });
 });
@@ -272,12 +293,119 @@ async function condenseDag() {
   }
 }
 
+// ===== Background Skill Review =====
+const { listSkills, createSkill, editSkill } = require("./lib/skills");
+
+const SKILL_REVIEW_PROMPT = `Review the conversation above. Consider whether a non-trivial approach was used that involved trial-and-error, changing course, or discovering something unexpected.
+
+If you found a reusable procedure worth saving, respond with a JSON block like this:
+\`\`\`json
+{
+  "action": "create",
+  "name": "skill-name-here",
+  "description": "When to use this skill",
+  "tags": ["tag1", "tag2"],
+  "body": "# Skill Title\\n\\nStep-by-step instructions..."
+}
+\`\`\`
+
+If an existing skill should be updated, use action "edit" with the same format.
+
+If nothing is worth saving, respond with exactly: NOTHING_TO_SAVE
+
+Rules:
+- Only save genuinely reusable procedures, not trivial tasks
+- Skill names must be lowercase with hyphens (e.g. "deploy-to-vercel")
+- Keep the body concise and actionable
+- Include specific commands, pitfalls, and workarounds discovered`;
+
+async function backgroundSkillReview(conversationHistory) {
+  // Only review if there were tool calls (indicates a task was performed)
+  const hasToolUse = conversationHistory.some(m =>
+    m.role === "assistant" && Array.isArray(m.content) &&
+    m.content.some(b => b.type === "tool_use")
+  );
+  if (!hasToolUse) return;
+
+  // Serialize recent conversation for the review
+  const recent = conversationHistory.slice(-20);
+  const serialized = recent.map(m => {
+    const role = m.role === "user" ? "User" : "Assistant";
+    if (typeof m.content === "string") return `${role}: ${m.content}`;
+    if (Array.isArray(m.content)) {
+      const parts = m.content.map(b => {
+        if (b.type === "text") return b.text;
+        if (b.type === "tool_use") return `[Tool: ${b.name}(${JSON.stringify(b.input).slice(0, 300)})]`;
+        if (b.type === "tool_result") return `[Result: ${(typeof b.content === "string" ? b.content : JSON.stringify(b.content)).slice(0, 300)}]`;
+        return "";
+      }).filter(Boolean);
+      return `${role}: ${parts.join("\n")}`;
+    }
+    return "";
+  }).filter(Boolean).join("\n\n");
+
+  // Existing skills context
+  const existingSkills = listSkills();
+  const skillContext = existingSkills.length > 0
+    ? `\n\nExisting skills: ${existingSkills.map(s => s.name).join(", ")}`
+    : "";
+
+  console.log("[Skills] Running background review...");
+
+  try {
+    const resp = await ai.chat({
+      messages: [{
+        role: "user",
+        content: `${serialized.slice(0, 30000)}${skillContext}\n\n---\n\n${SKILL_REVIEW_PROMPT}`
+      }],
+      system: "You are a skill extraction assistant. Analyze conversations and extract reusable procedures.",
+      max_tokens: 2048,
+    });
+
+    const text = resp.content.filter(b => b.type === "text").map(b => b.text).join("\n");
+
+    if (text.includes("NOTHING_TO_SAVE")) {
+      console.log("[Skills] Review: nothing to save.");
+      return;
+    }
+
+    // Parse JSON from response
+    const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/);
+    if (!jsonMatch) {
+      console.log("[Skills] Review: no valid JSON found.");
+      return;
+    }
+
+    const data = JSON.parse(jsonMatch[1]);
+    if (!data.name || !data.body) {
+      console.log("[Skills] Review: incomplete data.");
+      return;
+    }
+
+    if (data.action === "edit" && existingSkills.some(s => s.name === data.name)) {
+      const result = editSkill(data.name, data.description, data.body, data.tags);
+      if (result.ok) {
+        console.log(`[Skills] Background review updated: ${data.name}`);
+        broadcastToClients({ type: "skill_saved", name: data.name, action: "updated", background: true });
+      }
+    } else {
+      const result = createSkill(data.name, data.description || "", data.body, data.tags || []);
+      if (result.ok) {
+        console.log(`[Skills] Background review created: ${data.name}`);
+        broadcastToClients({ type: "skill_saved", name: data.name, action: "created", background: true });
+      }
+    }
+  } catch (e) {
+    console.log("[Skills] Background review error:", e.message);
+  }
+}
+
 // ===== Streaming Helper =====
 async function streamResponse(ws, conversationHistory, abortSignal, model) {
   const port = process.env.PORT || 3000;
-  const systemPrompt = await getSystemPrompt(PUBLIC_IP, port, getAgentInfo());
   const selectedModel = model || ai.getDefaultModel();
-  const tools = getToolDefinitions();
+  const systemPrompt = await getSystemPrompt(PUBLIC_IP, port, getAgentInfo(), selectedModel);
+  const tools = getToolDefinitions(selectedModel);
 
   return new Promise((resolve, reject) => {
     const s = ai.stream({
@@ -514,8 +642,13 @@ wss.on("connection", async (ws) => {
           currentAbort.abort();
           currentAbort = null;
         }
-        activeProcesses.forEach(p => { try { p.kill("SIGTERM"); } catch(e) {} });
-        activeProcesses = [];
+        // SIGKILL to force-kill hung processes (SIGTERM can be ignored)
+        activeProcesses.forEach(p => {
+          try { p.kill("SIGTERM"); } catch(e) {}
+          // Force kill after 2s if still alive
+          setTimeout(() => { try { p.kill("SIGKILL"); } catch(e) {} }, 2000);
+        });
+        activeProcesses.length = 0;
         console.log("[Cancel] User cancelled generation");
         return;
       }
@@ -565,15 +698,51 @@ wss.on("connection", async (ws) => {
       currentAbort = null;
       trackUsage(response, sessionUsage, ws);
 
-      while (response && response.stop_reason === "tool_use" && !cancelled) {
-        const assistantMessage = { role: "assistant", content: response.content };
+      const MAX_TOOL_ROUNDS = 15;
+      let toolRound = 0;
+      while (response && response.stop_reason === "tool_use" && !cancelled && toolRound < MAX_TOOL_ROUNDS) {
+        toolRound++;
+        // Deduplicate tool calls BEFORE storing (Kimi sometimes generates duplicates)
+        const seen = new Set();
+        const dedupedContent = response.content.filter(b => {
+          if (b.type !== "tool_use") return true;
+          const key = `${b.name}:${JSON.stringify(b.input)}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        const assistantMessage = { role: "assistant", content: dedupedContent };
         conversationHistory.push(assistantMessage);
-        const toolBlocks = response.content.filter(b => b.type === "tool_use");
-        const toolResults = cancelled ? [] : await Promise.all(
-          toolBlocks.map(block => executeTool(block, ws, activeProcesses, schedulerCtx))
-        );
+        const toolBlocks = dedupedContent.filter(b => b.type === "tool_use");
 
-        if (cancelled) {
+        // Race tool execution against cancel signal
+        let toolResults;
+        if (!cancelled) {
+          const cancelPromise = new Promise((resolve) => {
+            const checkCancel = setInterval(() => {
+              if (cancelled) {
+                clearInterval(checkCancel);
+                // Kill all active child processes immediately
+                activeProcesses.forEach(p => { try { p.kill("SIGKILL"); } catch(e) {} });
+                activeProcesses.length = 0;
+                resolve(null);
+              }
+            }, 200);
+            // Clean up interval when tools finish
+            Promise.all(toolBlocks.map(block => executeTool(block, ws, activeProcesses, schedulerCtx)))
+              .then(() => clearInterval(checkCancel))
+              .catch(() => clearInterval(checkCancel));
+          });
+          const toolPromise = Promise.all(
+            toolBlocks.map(block => executeTool(block, ws, activeProcesses, schedulerCtx))
+          );
+          toolResults = await Promise.race([toolPromise, cancelPromise]);
+        }
+
+        if (cancelled || !toolResults) {
+          // Ensure all child processes are killed
+          activeProcesses.forEach(p => { try { p.kill("SIGKILL"); } catch(e) {} });
+          activeProcesses.length = 0;
           const lastMsg = conversationHistory[conversationHistory.length - 1];
           if (lastMsg && lastMsg.role === "assistant" && Array.isArray(lastMsg.content)) {
             const cancelResults = lastMsg.content
@@ -583,6 +752,7 @@ wss.on("connection", async (ws) => {
               conversationHistory.push({ role: "user", content: cancelResults });
             }
           }
+          ws.send(JSON.stringify({ type: "stream_end" }));
           break;
         }
 
@@ -595,8 +765,15 @@ wss.on("connection", async (ws) => {
         trackUsage(response, sessionUsage, ws);
       }
 
+      if (toolRound >= MAX_TOOL_ROUNDS) {
+        console.warn(`[Tools] Hit max tool rounds (${MAX_TOOL_ROUNDS}), forcing stop`);
+        ws.send(JSON.stringify({ type: "stream", text: "\n\n⚠️ 工具调用次数已达上限，自动停止。" }));
+        ws.send(JSON.stringify({ type: "stream_end" }));
+      }
+
       if (response && !cancelled) {
-        conversationHistory.push({ role: "assistant", content: response.content });
+        const finalMsg = { role: "assistant", content: response.content };
+        conversationHistory.push(finalMsg);
       }
       saveConversation(conversationHistory);
 
@@ -623,6 +800,7 @@ wss.on("connection", async (ws) => {
   ws.on("close", async () => {
     console.log("Client disconnected");
     if (conversationHistory.length >= 4) {
+      // Auto-summary
       try {
         const recentMsgs = conversationHistory.slice(-10);
         const textOnly = recentMsgs
@@ -645,6 +823,11 @@ wss.on("connection", async (ws) => {
       } catch (e) {
         console.log("[Memory] Auto-summary failed:", e.message);
       }
+
+      // Background skill review — check if conversation had tool use worth saving as a skill
+      backgroundSkillReview(conversationHistory).catch(e =>
+        console.log("[Skills] Background review failed:", e.message)
+      );
     }
   });
 });
@@ -676,15 +859,7 @@ setInterval(cleanupSharedDir, 6 * 60 * 60 * 1000);
 let weixinService = null;
 
 app.post("/api/weixin/login", async (req, res) => {
-  if (!weixinService) {
-    weixinService = new WeixinService({ publicIp: PUBLIC_IP, port: process.env.PORT || 3000 });
-    weixinService.on("status", (data) => {
-      broadcastToClients({ type: "weixin_status", ...data });
-    });
-    weixinService.on("wx_message", (data) => {
-      broadcastToClients({ type: "weixin_message", ...data });
-    });
-  }
+  initWeixinService();
   const result = await weixinService.startLogin();
   res.json(result);
 });
@@ -697,6 +872,19 @@ app.post("/api/weixin/disconnect", (req, res) => {
 app.get("/api/weixin/status", (req, res) => {
   res.json(weixinService ? weixinService.getStatus() : { status: "disconnected" });
 });
+
+// ===== WeChat Auto-Reconnect =====
+function initWeixinService() {
+  if (weixinService) return weixinService;
+  weixinService = new WeixinService({ publicIp: PUBLIC_IP, port: process.env.PORT || 3000, getAgentInfo });
+  weixinService.on("status", (data) => {
+    broadcastToClients({ type: "weixin_status", ...data });
+  });
+  weixinService.on("wx_message", (data) => {
+    broadcastToClients({ type: "weixin_message", ...data });
+  });
+  return weixinService;
+}
 
 // ===== Start Server =====
 const PORT = process.env.PORT || 3000;
@@ -716,4 +904,19 @@ server.listen(PORT, async () => {
   const startTime = new Date().toISOString();
   fs.writeFileSync(RESTART_FLAG_FILE, JSON.stringify({ restarted: true, time: startTime }));
   console.log(`[Restart] Flag written at ${startTime}`);
+
+  // Auto-reconnect WeChat if previously logged in
+  try {
+    const wx = initWeixinService();
+    const reconnected = await wx.tryAutoReconnect();
+    if (reconnected) console.log("[WeChat] Auto-reconnected!");
+    // Wire scheduler → WeChat push
+    scheduler.setWeixinPush(async (text) => {
+      if (weixinService && weixinService.status === "connected") {
+        await weixinService.pushMessage(text);
+      }
+    });
+  } catch (e) {
+    console.log("[WeChat] Auto-reconnect skipped:", e.message);
+  }
 });

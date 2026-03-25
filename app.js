@@ -26,7 +26,7 @@ const HER_HOME = path.join(os.homedir(), ".her");
 // Create default .env
 const envFile = path.join(HER_HOME, ".env");
 if (!fs.existsSync(envFile)) {
-  fs.writeFileSync(envFile, `PORT=3456\nAPI_KEY=sk-9NKHcNWacvBIfukWZ2QRCCmFBfTz2K74vt3uXXUU8rqLojd9\nAPI_BASE_URL=https://www.packyapi.com\nAUTH_PASSWORD=\n`);
+  fs.writeFileSync(envFile, `PORT=3456\nAPI_KEY=\nAPI_BASE_URL=https://openrouter.ai/api/v1\nAUTH_PASSWORD=\n`);
 }
 
 // Copy index.html
@@ -93,7 +93,7 @@ function connectAgent() {
 
       switch (tool) {
         case "bash":
-          result = await execLocal(input.command, input.cwd);
+          result = await execLocal(input.command, input.cwd, input.timeout);
           break;
         case "read_file":
           result = readLocalFile(input.path, input.offset, input.limit);
@@ -104,11 +104,11 @@ function connectAgent() {
         case "edit_file":
           result = editLocalFile(input.path, input.old_string, input.new_string);
           break;
-        case "glob":
-          result = await globLocal(input.pattern, input.path || homeDir);
+        case "find":
+          result = await findLocal(input.pattern, input.path || homeDir, input.limit);
           break;
         case "grep":
-          result = await grepLocal(input.pattern, input.path || homeDir, input.include);
+          result = await grepLocal(input);
           break;
         default:
           result = `Unknown tool: ${tool}`;
@@ -143,16 +143,22 @@ if (!process.env.TAURI_ENV) {
 }
 
 // ===== Agent Tool Functions =====
-function execLocal(command, cwd) {
+const { fuzzyFindText, normalizeForFuzzyMatch, normalizeToLF, restoreLineEndings, stripBom, detectLineEnding } = require("./lib/edit-diff");
+const { spawnSync } = require("child_process");
+
+function execLocal(command, cwd, timeout) {
+  const timeoutMs = timeout ? timeout * 1000 : 120000;
   return new Promise((resolve) => {
     exec(command, {
-      encoding: "utf-8", timeout: 120000,
+      encoding: "utf-8", timeout: timeoutMs,
       cwd: cwd || homeDir,
       maxBuffer: 5 * 1024 * 1024,
       shell: process.platform === "win32" ? "cmd.exe" : "/bin/bash",
     }, (err, stdout, stderr) => {
-      if (err) resolve((stdout || "") + (stderr || err.message || "Command failed"));
-      else resolve(stdout || stderr || "");
+      let output = (stdout || "") + (stderr || "");
+      if (err && !output) output = err.message || "Command failed";
+      if (err && err.killed) output += "\n\nCommand timed out";
+      resolve(output);
     });
   });
 }
@@ -161,10 +167,14 @@ function readLocalFile(filePath, offset = 1, limit = 500) {
   try {
     const content = fs.readFileSync(filePath, "utf-8");
     const lines = content.split("\n");
+    const totalLines = lines.length;
     const start = Math.max(0, offset - 1);
-    const end = Math.min(lines.length, start + limit);
-    const numbered = lines.slice(start, end).map((line, i) => `${String(start + i + 1).padStart(6)}|${line}`).join("\n");
-    return `Lines ${start + 1}-${end} of ${lines.length}\n${numbered}`;
+    if (start >= totalLines) return `Error: Offset ${offset} is beyond end of file (${totalLines} lines total)`;
+    const end = Math.min(totalLines, start + limit);
+    const numbered = lines.slice(start, end).map((line, i) => `${String(start + i + 1).padStart(6)}│${line}`).join("\n");
+    let result = `Lines ${start + 1}-${end} of ${totalLines}\n${numbered}`;
+    if (end < totalLines) result += `\n\n[${totalLines - end} more lines. Use offset=${end + 1} to continue.]`;
+    return result;
   } catch (err) { return `Error: ${err.message}`; }
 }
 
@@ -173,32 +183,81 @@ function writeLocalFile(filePath, content) {
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(filePath, content, "utf-8");
-    return `File written: ${filePath} (${content.split("\n").length} lines)`;
+    return `File written: ${filePath} (${content.split("\n").length} lines, ${content.length} bytes)`;
   } catch (err) { return `Error: ${err.message}`; }
 }
 
 function editLocalFile(filePath, oldString, newString) {
   try {
-    const content = fs.readFileSync(filePath, "utf-8");
-    const count = content.split(oldString).length - 1;
-    if (count === 0) return "Error: old_string not found in file.";
-    if (count > 1) return `Error: old_string found ${count} times — must be unique.`;
-    fs.writeFileSync(filePath, content.replace(oldString, newString), "utf-8");
-    return `Edit applied to ${filePath}`;
+    const rawContent = fs.readFileSync(filePath, "utf-8");
+    const { bom, text: content } = stripBom(rawContent);
+    const originalEnding = detectLineEnding(content);
+    const normalized = normalizeToLF(content);
+    const normalizedOld = normalizeToLF(oldString);
+    const normalizedNew = normalizeToLF(newString);
+
+    const match = fuzzyFindText(normalized, normalizedOld);
+    if (!match.found) return "Error: old_string not found in file. Read the file first to get the exact content.";
+
+    const fuzzyContent = normalizeForFuzzyMatch(normalized);
+    const fuzzyOld = normalizeForFuzzyMatch(normalizedOld);
+    const occurrences = fuzzyContent.split(fuzzyOld).length - 1;
+    if (occurrences > 1) return `Error: old_string found ${occurrences} times — must be unique.`;
+
+    const base = match.contentForReplacement;
+    const newContent = base.substring(0, match.index) + normalizedNew + base.substring(match.index + match.matchLength);
+    if (base === newContent) return "Error: Replacement produced identical content.";
+
+    const finalContent = bom + restoreLineEndings(newContent, originalEnding);
+    fs.writeFileSync(filePath, finalContent, "utf-8");
+    return `Edit applied to ${filePath}${match.usedFuzzyMatch ? " (fuzzy match)" : ""}`;
   } catch (err) { return `Error: ${err.message}`; }
 }
 
-function globLocal(pattern, basePath) {
+function findLocal(pattern, basePath, limit) {
+  const effectiveLimit = limit || 200;
+  // Try fd first
+  try {
+    const fdPath = execSync("which fd", { encoding: "utf-8" }).trim();
+    if (fdPath) {
+      const result = spawnSync(fdPath, ["--glob", "--color=never", "--hidden", "--max-results", String(effectiveLimit), pattern, basePath], { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
+      const output = (result.stdout || "").trim();
+      return output || "No files found.";
+    }
+  } catch (e) {}
+  // Fallback
+  const namePattern = pattern.includes("/") ? pattern.split("/").pop() : pattern;
   const cmd = process.platform === "win32"
-    ? `dir /s /b "${basePath}\\${pattern}" 2>nul`
-    : `find "${basePath}" -name "${pattern}" -type f 2>/dev/null | head -100`;
+    ? `dir /s /b "${basePath}\\${namePattern}" 2>nul`
+    : `find "${basePath}" -name "${namePattern}" -type f 2>/dev/null | head -${effectiveLimit}`;
   return execLocal(cmd);
 }
 
-function grepLocal(pattern, searchPath, include) {
-  const includeFlag = include ? `--include="${include}"` : "";
+function grepLocal(input) {
+  const { pattern, path: searchPath = homeDir, glob: globFilter, ignoreCase, literal, context, limit } = input;
+  const effectiveLimit = limit || 100;
+  // Try ripgrep first
+  try {
+    const rgPath = execSync("which rg", { encoding: "utf-8" }).trim();
+    if (rgPath) {
+      const args = ["--line-number", "--color=never", "--hidden"];
+      if (ignoreCase) args.push("--ignore-case");
+      if (literal) args.push("--fixed-strings");
+      if (globFilter) args.push("--glob", globFilter);
+      if (context && context > 0) args.push("-C", String(context));
+      args.push("-m", String(effectiveLimit));
+      args.push(pattern, searchPath);
+      const result = spawnSync(rgPath, args, { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
+      return (result.stdout || "").trim() || "No matches found.";
+    }
+  } catch (e) {}
+  // Fallback
+  const flags = ["-rn"];
+  if (ignoreCase) flags.push("-i");
+  if (literal) flags.push("-F");
+  if (globFilter) flags.push(`--include=${globFilter}`);
   const cmd = process.platform === "win32"
     ? `findstr /s /n "${pattern}" "${searchPath}\\*" 2>nul`
-    : `grep -rn ${includeFlag} "${pattern}" "${searchPath}" 2>/dev/null | head -200`;
+    : `grep ${flags.join(" ")} "${pattern}" "${searchPath}" 2>/dev/null | head -${effectiveLimit}`;
   return execLocal(cmd);
 }
