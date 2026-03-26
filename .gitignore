@@ -9,5 +9,6 @@ agent/her-agent
 .ssh-ctrl/
 .DS_Store
 .claude/
+lib/embedded-html.js
 src-tauri/target/
 src-tauri/binaries/

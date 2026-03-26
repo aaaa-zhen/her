@@ -700,17 +700,26 @@ wss.on("connection", async (ws) => {
 
       const MAX_TOOL_ROUNDS = 15;
       let toolRound = 0;
+      const executedTools = new Set(); // Cross-round dedup: track tool calls across all rounds
       while (response && response.stop_reason === "tool_use" && !cancelled && toolRound < MAX_TOOL_ROUNDS) {
         toolRound++;
-        // Deduplicate tool calls BEFORE storing (Kimi sometimes generates duplicates)
+        // Deduplicate tool calls (same round + cross-round)
         const seen = new Set();
         const dedupedContent = response.content.filter(b => {
           if (b.type !== "tool_use") return true;
           const key = `${b.name}:${JSON.stringify(b.input)}`;
-          if (seen.has(key)) return false;
+          if (seen.has(key) || executedTools.has(key)) return false;
           seen.add(key);
+          executedTools.add(key);
           return true;
         });
+        // If all tool calls were deduped, stop the loop
+        if (dedupedContent.filter(b => b.type === "tool_use").length === 0) {
+          if (dedupedContent.some(b => b.type === "text")) {
+            conversationHistory.push({ role: "assistant", content: dedupedContent });
+          }
+          break;
+        }
         const assistantMessage = { role: "assistant", content: dedupedContent };
         conversationHistory.push(assistantMessage);
         const toolBlocks = dedupedContent.filter(b => b.type === "tool_use");
