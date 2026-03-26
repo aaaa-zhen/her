@@ -26,7 +26,7 @@ const HER_HOME = path.join(os.homedir(), ".her");
 // Create default .env
 const envFile = path.join(HER_HOME, ".env");
 if (!fs.existsSync(envFile)) {
-  fs.writeFileSync(envFile, `PORT=3456\nAPI_KEY=\nAPI_BASE_URL=https://openrouter.ai/api/v1\nAUTH_PASSWORD=\n`);
+  fs.writeFileSync(envFile, `PORT=3456\nAPI_KEY=\nAPI_BASE_URL=https://www.packyapi.com/v1\nAUTH_PASSWORD=\n`);
 }
 
 // Copy index.html (try source dir first, fall back to embedded version for compiled binary)

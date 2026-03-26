@@ -497,16 +497,20 @@
 
     <div class="about-section">
       <div class="about-section-title">API Settings</div>
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <button class="s-preset-btn" onclick="applyPreset('packy')" style="flex:1;padding:8px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all .2s">🇨🇳 PackyAPI（国内）</button>
+        <button class="s-preset-btn" onclick="applyPreset('openrouter')" style="flex:1;padding:8px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all .2s">🌐 OpenRouter（需翻墙）</button>
+      </div>
       <div class="s-field">
         <label class="s-label">API Key</label>
         <input class="s-input" type="password" id="s-api-key" placeholder="sk-...">
-        <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.8">
-          <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);text-decoration:none">openrouter.ai</a> 获取 API Key
+        <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.8" id="s-api-hint">
+          <a href="https://www.packyapi.com" target="_blank" style="color:var(--accent);text-decoration:none">packyapi.com</a> 或 <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);text-decoration:none">openrouter.ai</a> 获取 API Key
         </div>
       </div>
       <div class="s-field">
         <label class="s-label">Base URL</label>
-        <input class="s-input" type="text" id="s-base-url" placeholder="https://openrouter.ai/api/v1">
+        <input class="s-input" type="text" id="s-base-url" placeholder="https://www.packyapi.com/v1">
       </div>
       <div class="s-field">
         <label class="s-label">Default Model</label>
@@ -1469,6 +1473,19 @@ async function loadSettingsPanel() {
     document.getElementById("s-base-url").value = cfg.baseUrl || "";
     document.getElementById("s-model").value = cfg.model || "anthropic/claude-sonnet-4.6";
   } catch(e) { console.log("Failed to load settings:", e); }
+}
+
+function applyPreset(preset) {
+  if (preset === 'packy') {
+    document.getElementById("s-base-url").value = "https://www.packyapi.com/v1";
+    document.getElementById("s-model").value = "google/gemini-3.1-pro-preview";
+  } else if (preset === 'openrouter') {
+    document.getElementById("s-base-url").value = "https://openrouter.ai/api/v1";
+    document.getElementById("s-model").value = "google/gemini-3.1-pro-preview";
+  }
+  // Highlight active preset
+  document.querySelectorAll(".s-preset-btn").forEach(b => b.style.borderColor = "var(--border)");
+  event.target.style.borderColor = "var(--accent)";
 }
 
 document.getElementById("s-save").addEventListener("click", async () => {
