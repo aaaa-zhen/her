@@ -29,10 +29,17 @@ if (!fs.existsSync(envFile)) {
   fs.writeFileSync(envFile, `PORT=3456\nAPI_KEY=\nAPI_BASE_URL=https://openrouter.ai/api/v1\nAUTH_PASSWORD=\n`);
 }
 
-// Copy index.html
-const srcHtml = path.join(__dirname, "public", "index.html");
+// Copy index.html (try source dir first, fall back to embedded version for compiled binary)
 const destHtml = path.join(HER_HOME, "public", "index.html");
-if (fs.existsSync(srcHtml)) fs.copyFileSync(srcHtml, destHtml);
+const srcHtml = path.join(__dirname, "public", "index.html");
+if (fs.existsSync(srcHtml)) {
+  fs.copyFileSync(srcHtml, destHtml);
+} else {
+  try {
+    const embedded = require("./lib/embedded-html");
+    fs.writeFileSync(destHtml, embedded, "utf-8");
+  } catch (e) {}
+}
 
 // Set working dir and load env
 if (!process.env.PORT) process.env.PORT = "3456";
